@@ -10,9 +10,9 @@ on:
         options:
           - plan
           - apply
-  push:
-    branches:
-      - main
+#   push:
+#     branches:
+#       - main
 jobs:
   create-cluster-infra:
     runs-on: ubuntu-latest
