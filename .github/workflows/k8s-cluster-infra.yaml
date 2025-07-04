@@ -1,0 +1,14 @@
+name: Create K8s Cluster Infra
+on:
+  workflow_dispatch:
+    push:
+        branches:
+        - main
+jobs:
+  create-cluster-infra:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+    
+    
