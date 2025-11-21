@@ -58,6 +58,12 @@ resource "azurerm_network_security_group" "nsg" {
   }
 }
 
+module "ssh_key" {
+  source           = "../modules/ssh-key"
+  private_key_path = "${path.module}/ssh/id_rsa"
+}
+
+
 # -------------------------------
 # MASTER NIC
 # -------------------------------
@@ -82,7 +88,7 @@ module "master_vm" {
   nic_id        = module.master_nic.nic_id
   vm_size       = var.master_vm_size
   admin_username = var.admin_user
-  ssh_public_key = var.ssh_public_key
+  ssh_public_key = module.ssh_key.public_key
 }
 
 # -------------------------------
@@ -112,5 +118,5 @@ module "worker_vms" {
   nic_id         = module.worker_nics[count.index].nic_id
   vm_size        = var.worker_vm_size
   admin_username = var.admin_user
-  ssh_public_key = var.ssh_public_key
+  ssh_public_key = module.ssh_key.public_key
 }
