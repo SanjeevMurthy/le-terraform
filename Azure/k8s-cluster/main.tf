@@ -2,7 +2,7 @@ terraform {
   required_version = ">= 1.3.0"
   required_providers {
     azurerm = {
-      source = "hashicorp/azurerm"
+      source  = "hashicorp/azurerm"
       version = "~> 3.0"
     }
   }
@@ -68,11 +68,11 @@ module "ssh_key" {
 # MASTER NIC
 # -------------------------------
 module "master_nic" {
-  source          = "../modules/nic"
-  name            = "master-nic"
-  location        = var.location
-  resource_group  = azurerm_resource_group.k8s_rg.name
-  subnet_id       = azurerm_subnet.subnet.id
+  source           = "../modules/nic"
+  name             = "master-nic"
+  location         = var.location
+  resource_group   = azurerm_resource_group.k8s_rg.name
+  subnet_id        = azurerm_subnet.subnet.id
   create_public_ip = true
 }
 
@@ -85,8 +85,8 @@ module "master_vm" {
   location       = var.location
   resource_group = azurerm_resource_group.k8s_rg.name
 
-  nic_id        = module.master_nic.nic_id
-  vm_size       = var.master_vm_size
+  nic_id         = module.master_nic.nic_id
+  vm_size        = var.master_vm_size
   admin_username = var.admin_user
   ssh_public_key = module.ssh_key.public_key
 }
@@ -95,12 +95,12 @@ module "master_vm" {
 # WORKER NICS
 # -------------------------------
 module "worker_nics" {
-  count           = var.worker_count
-  source          = "../modules/nic"
-  name            = "worker-nic-${count.index}"
-  location        = var.location
-  resource_group  = azurerm_resource_group.k8s_rg.name
-  subnet_id       = azurerm_subnet.subnet.id
+  count            = var.worker_count
+  source           = "../modules/nic"
+  name             = "worker-nic-${count.index}"
+  location         = var.location
+  resource_group   = azurerm_resource_group.k8s_rg.name
+  subnet_id        = azurerm_subnet.subnet.id
   create_public_ip = false
 }
 
@@ -108,8 +108,8 @@ module "worker_nics" {
 # WORKER VMs
 # -------------------------------
 module "worker_vms" {
-  count          = var.worker_count
-  source         = "../modules/vm"
+  count  = var.worker_count
+  source = "../modules/vm"
 
   name           = "k8s-worker-${count.index}"
   location       = var.location
