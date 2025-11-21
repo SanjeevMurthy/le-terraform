@@ -1,0 +1,62 @@
+name: Azure k8s Cluster
+
+on:
+  workflow_dispatch:
+
+jobs:
+  terraform:
+    name: Terraform plan & apply
+    runs-on: ubuntu-latest
+    env:
+      TF_WORKING_DIR: Azure/k8s-cluster
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Test Login
+        uses: azure/login@v1
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: "1.5.0"
+
+      - name: Terraform init
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: |
+          # If you use an azurerm backend, uncomment and pass backend-config from secrets:
+          # terraform init -backend-config="storage_account_name=${{ secrets.TF_STATE_STORAGE_ACCOUNT }}" \
+          #                -backend-config="container_name=${{ secrets.TF_STATE_CONTAINER }}" \
+          #                -backend-config="key=${{ secrets.TF_STATE_KEY }}" \
+          #                -backend-config="resource_group_name=${{ secrets.TF_STATE_RESOURCE_GROUP }}"
+          terraform init
+
+      - name: Terraform fmt & validate
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: |
+          terraform fmt -recursive
+          terraform validate
+
+      - name: Terraform plan
+        id: plan
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: |
+          terraform plan -out=tfplan -input=false
+
+      - name: Upload plan artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan
+          path: ${{ env.TF_WORKING_DIR }}/tfplan
+
+      - name: Terraform apply (only on main or manual run)
+        if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: |
+          terraform apply -input=false -auto-approve tfplan
