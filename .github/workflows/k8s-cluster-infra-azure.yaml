@@ -12,11 +12,6 @@ on:
           - plan
           - apply
           - destroy
-      # azure_region:
-      #   description: 'Azure Region for the resources'
-      #   required: true
-      #   default: 'us-east-1'
-      #   type: string
 
 jobs:
   terraform:
@@ -33,7 +28,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Test Login
+      - name: Login to Azure
         uses: azure/login@v2
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
@@ -47,13 +42,7 @@ jobs:
 
       - name: Terraform init
         working-directory: ${{ env.TF_WORKING_DIR }}
-        run: |
-          # If you use an azurerm backend, uncomment and pass backend-config from secrets:
-          # terraform init -backend-config="storage_account_name=${{ secrets.TF_STATE_STORAGE_ACCOUNT }}" \
-          #                -backend-config="container_name=${{ secrets.TF_STATE_CONTAINER }}" \
-          #                -backend-config="key=${{ secrets.TF_STATE_KEY }}" \
-          #                -backend-config="resource_group_name=${{ secrets.TF_STATE_RESOURCE_GROUP }}"
-          terraform init
+        run: terraform init
 
       - name: Terraform fmt & validate
         working-directory: ${{ env.TF_WORKING_DIR }}
@@ -61,30 +50,36 @@ jobs:
           terraform fmt -recursive
           terraform validate
 
-      # - name: Terraform plan
-      #   id: plan
-      #   working-directory: ${{ env.TF_WORKING_DIR }}
-      #   run: |
-      #     terraform plan -out=tfplan -input=false
-
-      # - name: Terraform apply (only on main or manual run)
-      #   if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
-      #   working-directory: ${{ env.TF_WORKING_DIR }}
-      #   run: |
-      #     terraform apply -input=false -auto-approve tfplan
-      
-      - name: Terraform Plan or Apply
+      - name: "Plan: create plan file"
+        if: "${{ github.event.inputs.action == 'plan' }}"
         working-directory: ${{ env.TF_WORKING_DIR }}
         run: |
-          if [ "${{ github.event.inputs.action }}" = "apply" ]; then
-            terraform apply -auto-approve
-          else
-            terraform plan -out=tfplan -input=false
-          fi
-      
-      - name: Upload plan artifact
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: tfplan
-          path: ${{ env.TF_WORKING_DIR }}/tfplan
+          terraform plan -out=tfplan -input=false
+          # upload the binary plan to Azure blob storage with a fixed name 'tfplan'
+          az storage blob upload \
+            --account-name "${{ secrets.TF_STATE_STORAGE_ACCOUNT }}" \
+            --account-key "${{ secrets.TF_STATE_STORAGE_KEY }}" \
+            --container-name "${{ secrets.TF_PLAN_CONTAINER }}" \
+            --name tfplan \
+            --file tfplan \
+            --overwrite
+
+      - name: "Apply: download plan and apply"
+        if: "${{ github.event.inputs.action == 'apply' }}"
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: |
+          # download the previously uploaded plan from blob storage
+          az storage blob download \
+            --account-name "${{ secrets.TF_STATE_STORAGE_ACCOUNT }}" \
+            --account-key "${{ secrets.TF_STATE_STORAGE_KEY }}" \
+            --container-name "${{ secrets.TF_PLAN_CONTAINER }}" \
+            --name tfplan \
+            --file tfplan || { echo "Failed to download plan blob"; exit 1; }
+
+          # apply the exact plan file (binary)
+          terraform apply -input=false -auto-approve tfplan
+
+      - name: Destroy (optional)
+        if: "${{ github.event.inputs.action == 'destroy' }}"
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform destroy -auto-approve
