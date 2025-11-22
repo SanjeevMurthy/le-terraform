@@ -20,6 +20,8 @@ jobs:
     runs-on: ubuntu-latest
     env:
       TF_WORKING_DIR: Azure/k8s-cluster
+    if: "${{ github.event.inputs.action == 'plan' }} || ${{
+      github.event.inputs.action == 'apply' }}"
 
     permissions:
       id-token: write
@@ -58,13 +60,11 @@ jobs:
           terraform validate
 
       - name: "Plan: create plan file"
-        if: "${{ github.event.inputs.action == 'plan' }}"
         working-directory: ${{ env.TF_WORKING_DIR }}
         run: |
           terraform plan -out=tfplan -input=false
 
       - uses: actions/upload-artifact@v4
-        if: ${{ github.event.inputs.action == 'plan' }}
         with:
           name: tfplan
           path: ${{ env.TF_WORKING_DIR }}/tfplan
