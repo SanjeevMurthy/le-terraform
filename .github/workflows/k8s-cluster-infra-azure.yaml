@@ -18,10 +18,9 @@ jobs:
   terraform_plan:
     name: Terraform plan 
     runs-on: ubuntu-latest
+    if: "${{ github.event.inputs.action == 'plan' }} || ${{ github.event.inputs.action == 'apply' }}"
     env:
       TF_WORKING_DIR: Azure/k8s-cluster
-    if: "${{ github.event.inputs.action == 'plan' }} || ${{
-      github.event.inputs.action == 'apply' }}"
 
     permissions:
       id-token: write
