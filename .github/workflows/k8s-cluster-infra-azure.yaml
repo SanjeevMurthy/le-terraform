@@ -42,7 +42,13 @@ jobs:
 
       - name: Terraform init
         working-directory: ${{ env.TF_WORKING_DIR }}
-        run: terraform init
+        run: |
+          terraform init \
+            -backend-config="resource_group_name=${{ secrets.AZURE_TF_STATE_RG }}" \
+            -backend-config="storage_account_name=${{ secrets.AZURE_TF_STATE_STORAGE_ACCOUNT }}" \
+            -backend-config="container_name=${{ secrets.AZURE_TF_STATE_CONTAINER }}" \
+            -backend-config="key=${{ secrets.AZURE_TF_STATE_STORAGE_KEY }}" \
+            -input=false
 
       - name: Terraform fmt & validate
         working-directory: ${{ env.TF_WORKING_DIR }}
@@ -55,28 +61,11 @@ jobs:
         working-directory: ${{ env.TF_WORKING_DIR }}
         run: |
           terraform plan -out=tfplan -input=false
-          # upload the binary plan to Azure blob storage with a fixed name 'tfplan'
-          az storage blob upload \
-            --account-name "${{ secrets.TF_STATE_STORAGE_ACCOUNT }}" \
-            --account-key "${{ secrets.TF_STATE_STORAGE_KEY }}" \
-            --container-name "${{ secrets.TF_PLAN_CONTAINER }}" \
-            --name tfplan \
-            --file tfplan \
-            --overwrite
 
       - name: "Apply: download plan and apply"
         if: "${{ github.event.inputs.action == 'apply' }}"
         working-directory: ${{ env.TF_WORKING_DIR }}
         run: |
-          # download the previously uploaded plan from blob storage
-          az storage blob download \
-            --account-name "${{ secrets.TF_STATE_STORAGE_ACCOUNT }}" \
-            --account-key "${{ secrets.TF_STATE_STORAGE_KEY }}" \
-            --container-name "${{ secrets.TF_PLAN_CONTAINER }}" \
-            --name tfplan \
-            --file tfplan || { echo "Failed to download plan blob"; exit 1; }
-
-          # apply the exact plan file (binary)
           terraform apply -input=false -auto-approve tfplan
 
       - name: Destroy (optional)
