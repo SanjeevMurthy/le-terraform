@@ -18,7 +18,8 @@ jobs:
   terraform_plan:
     name: Terraform plan 
     runs-on: ubuntu-latest
-    if: "${{ github.event.inputs.action == 'plan' }} || ${{ github.event.inputs.action == 'apply' }}"
+    if: ${{ github.event.inputs.action == 'plan' || github.event.inputs.action == 'apply' }}
+
     env:
       TF_WORKING_DIR: Azure/k8s-cluster
 
@@ -74,7 +75,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       TF_WORKING_DIR: Azure/k8s-cluster
-    if: "${{ github.event.inputs.action == 'apply' }}"
+    if: ${{ github.event.inputs.action == 'apply' }}
 
     permissions:
       id-token: write
@@ -125,7 +126,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       TF_WORKING_DIR: Azure/k8s-cluster
-    if: "${{ github.event.inputs.action == 'destroy' }}"
+    if: ${{ github.event.inputs.action == 'destroy' }}
 
     permissions:
       id-token: write
@@ -166,7 +167,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       TF_WORKING_DIR: Azure/k8s-cluster
-    if: "${{ github.event.inputs.action == 'list' }}"
+    if: ${{ github.event.inputs.action == 'list' }}
 
     permissions:
       id-token: write
