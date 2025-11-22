@@ -12,10 +12,11 @@ on:
           - plan
           - apply
           - destroy
+          - list
 
 jobs:
-  terraform:
-    name: Terraform plan & apply
+  terraform_plan:
+    name: Terraform plan 
     runs-on: ubuntu-latest
     env:
       TF_WORKING_DIR: Azure/k8s-cluster
@@ -67,20 +68,137 @@ jobs:
         with:
           name: tfplan
           path: ${{ env.TF_WORKING_DIR }}/tfplan
+  
+  terraform_apply:
+    name: Terraform apply
+    needs: terraform_plan
+    runs-on: ubuntu-latest
+    env:
+      TF_WORKING_DIR: Azure/k8s-cluster
+    if: "${{ github.event.inputs.action == 'apply' }}"
 
-      - uses: actions/download-artifact@v4
-        if: ${{ github.event.inputs.action == 'apply' }}
+    permissions:
+      id-token: write
+      contents: read
+
+    environment:
+      name: production
+      url: https://portal.azure.com/
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Login to Azure
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: "1.5.0"
+
+      - name: Terraform Init
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: |
+          terraform init \
+            -backend-config="resource_group_name=${{ secrets.AZURE_TF_STATE_RG }}" \
+            -backend-config="storage_account_name=${{ secrets.AZURE_TF_STATE_STORAGE_ACCOUNT }}" \
+            -backend-config="container_name=${{ secrets.AZURE_TF_STATE_CONTAINER }}" \
+            -backend-config="key=${{ secrets.AZURE_TF_STATE_STORAGE_KEY }}" \
+            -input=false
+
+      - name: Download Plan Artifact
+        uses: actions/download-artifact@v4
         with:
           name: tfplan
           path: ${{ env.TF_WORKING_DIR }}
 
-      - name: "Apply: download plan and apply"
-        if: "${{ github.event.inputs.action == 'apply' }}"
+      - name: Terraform Apply
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform apply -input=false -auto-approve tfplan
+  
+  terraform_destroy:
+    name: Terraform destroy
+    runs-on: ubuntu-latest
+    env:
+      TF_WORKING_DIR: Azure/k8s-cluster
+    if: "${{ github.event.inputs.action == 'destroy' }}"
+
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Login to Azure
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: "1.5.0"
+
+      - name: Terraform Init
         working-directory: ${{ env.TF_WORKING_DIR }}
         run: |
-          terraform apply -input=false -auto-approve tfplan
+          terraform init \
+            -backend-config="resource_group_name=${{ secrets.AZURE_TF_STATE_RG }}" \
+            -backend-config="storage_account_name=${{ secrets.AZURE_TF_STATE_STORAGE_ACCOUNT }}" \
+            -backend-config="container_name=${{ secrets.AZURE_TF_STATE_CONTAINER }}" \
+            -backend-config="key=${{ secrets.AZURE_TF_STATE_STORAGE_KEY }}" \
+            -input=false
 
-      - name: Destroy (optional)
-        if: "${{ github.event.inputs.action == 'destroy' }}"
+      - name: Terraform Destroy
         working-directory: ${{ env.TF_WORKING_DIR }}
         run: terraform destroy -auto-approve
+    
+  terraform_list:
+    name: Terraform list resources
+    runs-on: ubuntu-latest
+    env:
+      TF_WORKING_DIR: Azure/k8s-cluster
+    if: "${{ github.event.inputs.action == 'list' }}"
+
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Login to Azure
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: "1.5.0"
+
+      - name: Terraform Init
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: |
+          terraform init \
+            -backend-config="resource_group_name=${{ secrets.AZURE_TF_STATE_RG }}" \
+            -backend-config="storage_account_name=${{ secrets.AZURE_TF_STATE_STORAGE_ACCOUNT }}" \
+            -backend-config="container_name=${{ secrets.AZURE_TF_STATE_CONTAINER }}" \
+            -backend-config="key=${{ secrets.AZURE_TF_STATE_STORAGE_KEY }}" \
+            -input=false
+
+      - name: Terraform State List Resource names
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform state list
