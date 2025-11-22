@@ -22,3 +22,7 @@ variable "worker_vm_size" {
 variable "worker_count" {
   default = 2
 }
+
+variable "resource_group" {
+  default = "rg-learning-k8s"
+}

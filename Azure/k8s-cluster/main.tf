@@ -16,7 +16,7 @@ provider "azurerm" {
 # Resource Group
 # -------------------------------
 resource "azurerm_resource_group" "k8s_rg" {
-  name     = "k8s-lab-rg"
+  name     = var.resource_group
   location = var.location
 }
 
