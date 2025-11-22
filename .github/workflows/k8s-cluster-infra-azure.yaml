@@ -2,6 +2,21 @@ name: Azure k8s Cluster
 
 on:
   workflow_dispatch:
+    inputs:
+      action:
+        description: 'Terraform action to perform'
+        required: true
+        default: 'plan'
+        type: choice
+        options:
+          - plan
+          - apply
+          - destroy
+      # azure_region:
+      #   description: 'Azure Region for the resources'
+      #   required: true
+      #   default: 'us-east-1'
+      #   type: string
 
 jobs:
   terraform:
@@ -46,21 +61,30 @@ jobs:
           terraform fmt -recursive
           terraform validate
 
-      - name: Terraform plan
-        id: plan
+      # - name: Terraform plan
+      #   id: plan
+      #   working-directory: ${{ env.TF_WORKING_DIR }}
+      #   run: |
+      #     terraform plan -out=tfplan -input=false
+
+      # - name: Terraform apply (only on main or manual run)
+      #   if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+      #   working-directory: ${{ env.TF_WORKING_DIR }}
+      #   run: |
+      #     terraform apply -input=false -auto-approve tfplan
+      
+      - name: Terraform Plan or Apply
         working-directory: ${{ env.TF_WORKING_DIR }}
         run: |
-          terraform plan -out=tfplan -input=false
-
+          if [ "${{ github.event.inputs.action }}" = "apply" ]; then
+            terraform apply -auto-approve
+          else
+            terraform plan
+          fi
+      
       - name: Upload plan artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: tfplan
           path: ${{ env.TF_WORKING_DIR }}/tfplan
-
-      - name: Terraform apply (only on main or manual run)
-        if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
-        working-directory: ${{ env.TF_WORKING_DIR }}
-        run: |
-          terraform apply -input=false -auto-approve tfplan
