@@ -81,10 +81,6 @@ jobs:
       id-token: write
       contents: read
 
-    environment:
-      name: production
-      url: https://portal.azure.com/
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
