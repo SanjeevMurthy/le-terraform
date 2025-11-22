@@ -79,7 +79,7 @@ jobs:
           if [ "${{ github.event.inputs.action }}" = "apply" ]; then
             terraform apply -auto-approve
           else
-            terraform plan
+            terraform plan -out=tfplan -input=false
           fi
       
       - name: Upload plan artifact
