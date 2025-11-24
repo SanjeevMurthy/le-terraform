@@ -15,9 +15,9 @@ provider "azurerm" {
 # -------------------------------
 # Resource Group
 # -------------------------------
-resource "azurerm_resource_group" "k8s_rg" {
+data "azurerm_resource_group" "k8s_rg" {
   name     = var.resource_group
-  location = var.location
+  #location = var.location
 }
 
 # -------------------------------
