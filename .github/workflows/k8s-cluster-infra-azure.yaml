@@ -134,6 +134,24 @@ jobs:
           ARM_USE_OIDC: true
         run: terraform apply -input=false -auto-approve tfplan
 
+      - name: Extract Private Key
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        env:
+          ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          ARM_USE_OIDC: true
+        run: |
+          terraform output -raw private_key > private_key.pem
+          chmod 600 private_key.pem
+
+      - name: Upload Private Key Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ssh-private-key
+          path: ${{ env.TF_WORKING_DIR }}/private_key.pem
+          retention-days: 1
+
   terraform_destroy:
     name: Terraform destroy
     runs-on: ubuntu-latest
