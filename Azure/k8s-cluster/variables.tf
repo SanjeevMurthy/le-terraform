@@ -11,6 +11,11 @@ variable "ssh_public_key" {
   type        = string
 }
 
+variable "ssh_private_key_path" {
+  description = "Path to SSH private key file"
+  type        = string
+}
+
 variable "master_vm_size" {
   default = "Standard_B2s"
 }
