@@ -6,6 +6,7 @@ terraform {
       version = "~> 3.0"
     }
   }
+  backend "azurerm" {}
 }
 
 provider "azurerm" {
@@ -16,7 +17,7 @@ provider "azurerm" {
 # Resource Group
 # -------------------------------
 data "azurerm_resource_group" "k8s_rg" {
-  name     = var.resource_group
+  name = var.resource_group
   #location = var.location
 }
 
