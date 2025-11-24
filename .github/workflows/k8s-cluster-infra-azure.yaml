@@ -84,10 +84,10 @@ jobs:
           ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
           ARM_USE_OIDC: true
         run: |
-          SSH_PUB_KEY=$(cat ${{ env.TF_WORKING_DIR }}/ssh/id_rsa.pub)
+          SSH_PUB_KEY=$(cat ssh/id_rsa.pub)
           terraform plan -out=tfplan -input=false \
             -var="ssh_public_key=${SSH_PUB_KEY}" \
-            -var="ssh_private_key_path=${{ env.TF_WORKING_DIR }}/ssh/id_rsa"
+            -var="ssh_private_key_path=$(pwd)/ssh/id_rsa"
 
       - uses: actions/upload-artifact@v4
         with:
