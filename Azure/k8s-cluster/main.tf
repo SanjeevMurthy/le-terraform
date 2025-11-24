@@ -27,12 +27,12 @@ resource "azurerm_virtual_network" "vnet" {
   name                = "k8s-vnet"
   address_space       = ["10.10.0.0/16"]
   location            = var.location
-  resource_group_name = azurerm_resource_group.k8s_rg.name
+  resource_group_name = data.azurerm_resource_group.k8s_rg.name
 }
 
 resource "azurerm_subnet" "subnet" {
   name                 = "k8s-subnet"
-  resource_group_name  = azurerm_resource_group.k8s_rg.name
+  resource_group_name  = data.azurerm_resource_group.k8s_rg.name
   virtual_network_name = azurerm_virtual_network.vnet.name
   address_prefixes     = ["10.10.1.0/24"]
 }
@@ -43,7 +43,7 @@ resource "azurerm_subnet" "subnet" {
 resource "azurerm_network_security_group" "nsg" {
   name                = "k8s-nsg"
   location            = var.location
-  resource_group_name = azurerm_resource_group.k8s_rg.name
+  resource_group_name = data.azurerm_resource_group.k8s_rg.name
 
   security_rule {
     name                       = "SSH"
@@ -71,7 +71,7 @@ module "master_nic" {
   source           = "../modules/nic"
   name             = "master-nic"
   location         = var.location
-  resource_group   = azurerm_resource_group.k8s_rg.name
+  resource_group   = data.azurerm_resource_group.k8s_rg.name
   subnet_id        = azurerm_subnet.subnet.id
   create_public_ip = true
 }
@@ -83,7 +83,7 @@ module "master_vm" {
   source         = "../modules/vm"
   name           = "k8s-master"
   location       = var.location
-  resource_group = azurerm_resource_group.k8s_rg.name
+  resource_group = data.azurerm_resource_group.k8s_rg.name
 
   nic_id         = module.master_nic.nic_id
   vm_size        = var.master_vm_size
@@ -99,7 +99,7 @@ module "worker_nics" {
   source           = "../modules/nic"
   name             = "worker-nic-${count.index}"
   location         = var.location
-  resource_group   = azurerm_resource_group.k8s_rg.name
+  resource_group   = data.azurerm_resource_group.k8s_rg.name
   subnet_id        = azurerm_subnet.subnet.id
   create_public_ip = false
 }
@@ -113,7 +113,7 @@ module "worker_vms" {
 
   name           = "k8s-worker-${count.index}"
   location       = var.location
-  resource_group = azurerm_resource_group.k8s_rg.name
+  resource_group = data.azurerm_resource_group.k8s_rg.name
 
   nic_id         = module.worker_nics[count.index].nic_id
   vm_size        = var.worker_vm_size
