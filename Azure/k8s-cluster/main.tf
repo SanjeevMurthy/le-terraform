@@ -64,6 +64,16 @@ module "ssh_key" {
   private_key_path = "${path.module}/ssh/id_rsa"
 }
 
+# -------------------------------
+# K8S BOOTSTRAP (Master Init)
+# -------------------------------
+module "k8s_bootstrap" {
+  source               = "../modules/k8s-bootstrap"
+  is_master            = true
+  master_public_ip     = module.master_nic.public_ip
+  ssh_private_key_path = module.ssh_key.private_key_path
+  admin_user           = var.admin_user
+}
 
 # -------------------------------
 # MASTER NIC
@@ -90,6 +100,9 @@ module "master_vm" {
   vm_size        = var.master_vm_size
   admin_username = var.admin_user
   ssh_public_key = module.ssh_key.public_key
+
+  # Cloud-init: just the common setup
+  custom_data = module.k8s_bootstrap.cloud_init_base_b64
 }
 
 # -------------------------------
@@ -120,4 +133,13 @@ module "worker_vms" {
   vm_size        = var.worker_vm_size
   admin_username = var.admin_user
   ssh_public_key = module.ssh_key.public_key
+
+  # Cloud-init: common setup + join command
+  custom_data = base64encode(<<EOF
+${module.k8s_bootstrap.common_setup_script}
+
+# Join the cluster
+${module.k8s_bootstrap.join_command}
+EOF
+  )
 }
