@@ -41,6 +41,20 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
+      - name: Generate SSH Key
+        run: |
+          mkdir -p ${{ env.TF_WORKING_DIR }}/ssh
+          ssh-keygen -t rsa -b 4096 -f ${{ env.TF_WORKING_DIR }}/ssh/id_rsa -N "" -C "k8s-cluster-key"
+          chmod 600 ${{ env.TF_WORKING_DIR }}/ssh/id_rsa
+          chmod 644 ${{ env.TF_WORKING_DIR }}/ssh/id_rsa.pub
+
+      - name: Upload SSH Private Key Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ssh-private-key
+          path: ${{ env.TF_WORKING_DIR }}/ssh/id_rsa
+          retention-days: 1
+
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v2
         with:
@@ -70,7 +84,9 @@ jobs:
           ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
           ARM_USE_OIDC: true
         run: |
-          terraform plan -out=tfplan -input=false
+          terraform plan -out=tfplan -input=false \
+            -var="ssh_public_key=$(cat ${{ env.TF_WORKING_DIR }}/ssh/id_rsa.pub)" \
+            -var="ssh_private_key_path=${{ env.TF_WORKING_DIR }}/ssh/id_rsa"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -104,6 +120,19 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
+      - name: Download SSH Key Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ssh-private-key
+          path: ${{ env.TF_WORKING_DIR }}/ssh
+
+      - name: Set SSH Key Permissions
+        working-directory: ${{ env.TF_WORKING_DIR }}/ssh
+        run: |
+          chmod 600 id_rsa
+          # Regenerate public key from private key
+          ssh-keygen -y -f id_rsa > id_rsa.pub
+
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v2
         with:
@@ -133,24 +162,6 @@ jobs:
           ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
           ARM_USE_OIDC: true
         run: terraform apply -input=false -auto-approve tfplan
-
-      - name: Extract Private Key
-        working-directory: ${{ env.TF_WORKING_DIR }}
-        env:
-          ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-          ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-          ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-          ARM_USE_OIDC: true
-        run: |
-          terraform output -raw private_key > private_key.pem
-          chmod 600 private_key.pem
-
-      - name: Upload Private Key Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ssh-private-key
-          path: ${{ env.TF_WORKING_DIR }}/private_key.pem
-          retention-days: 1
 
   terraform_destroy:
     name: Terraform destroy
