@@ -3,7 +3,8 @@ resource "azurerm_public_ip" "nic_public_ip" {
   name                = "${var.name}-pubip"
   location            = var.location
   resource_group_name = var.resource_group
-  allocation_method   = "Dynamic"
+  allocation_method   = "Static"
+  sku                 = "Standard"
 }
 
 resource "azurerm_network_interface" "nic" {
