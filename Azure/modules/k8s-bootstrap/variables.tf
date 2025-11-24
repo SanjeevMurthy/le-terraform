@@ -28,7 +28,7 @@ variable "ssh_private_key_path" {
 
 variable "kubernetes_version" {
   type    = string
-  default = "1.30.0"
+  default = "1.34.2"
 }
 
 variable "pod_network_cidr" {
