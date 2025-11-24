@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       action:
-        description: 'Terraform action to perform'
+        description: "Terraform action to perform"
         required: true
-        default: 'plan'
+        default: "plan"
         type: choice
         options:
           - plan
@@ -16,7 +16,7 @@ on:
 
 jobs:
   terraform_plan:
-    name: Terraform plan 
+    name: Terraform plan
     runs-on: ubuntu-latest
     if: ${{ github.event.inputs.action == 'plan' || github.event.inputs.action == 'apply' }}
 
@@ -45,6 +45,11 @@ jobs:
 
       - name: Terraform init
         working-directory: ${{ env.TF_WORKING_DIR }}
+        env:
+          ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          ARM_USE_OIDC: true
         run: |
           terraform init \
             -backend-config="resource_group_name=${{ secrets.AZURE_TF_STATE_RG }}" \
@@ -68,7 +73,7 @@ jobs:
         with:
           name: tfplan
           path: ${{ env.TF_WORKING_DIR }}/tfplan
-  
+
   terraform_apply:
     name: Terraform apply
     needs: terraform_plan
@@ -99,6 +104,11 @@ jobs:
 
       - name: Terraform Init
         working-directory: ${{ env.TF_WORKING_DIR }}
+        env:
+          ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          ARM_USE_OIDC: true
         run: |
           terraform init \
             -backend-config="resource_group_name=${{ secrets.AZURE_TF_STATE_RG }}" \
@@ -116,7 +126,7 @@ jobs:
       - name: Terraform Apply
         working-directory: ${{ env.TF_WORKING_DIR }}
         run: terraform apply -input=false -auto-approve tfplan
-  
+
   terraform_destroy:
     name: Terraform destroy
     runs-on: ubuntu-latest
@@ -146,6 +156,11 @@ jobs:
 
       - name: Terraform Init
         working-directory: ${{ env.TF_WORKING_DIR }}
+        env:
+          ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          ARM_USE_OIDC: true
         run: |
           terraform init \
             -backend-config="resource_group_name=${{ secrets.AZURE_TF_STATE_RG }}" \
@@ -157,7 +172,7 @@ jobs:
       - name: Terraform Destroy
         working-directory: ${{ env.TF_WORKING_DIR }}
         run: terraform destroy -auto-approve
-    
+
   terraform_list:
     name: Terraform list resources
     runs-on: ubuntu-latest
