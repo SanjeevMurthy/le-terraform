@@ -62,6 +62,13 @@ jobs:
           terraform fmt -recursive
           terraform validate
 
+      - name: Create SSH Key File
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: |
+          mkdir -p ssh
+          echo -e "${{ secrets.AZURE_SSH_PRIVATE_KEY }}" > ssh/id_rsa
+          chmod 600 ssh/id_rsa
+
       - name: "Plan: create plan file"
         working-directory: ${{ env.TF_WORKING_DIR }}
         env:
@@ -70,7 +77,8 @@ jobs:
           ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
           ARM_USE_OIDC: true
         run: |
-          terraform plan -out=tfplan -input=false
+          terraform plan -out=tfplan -input=false \
+            -var="ssh_public_key=${{ secrets.AZURE_SSH_PUBLIC_KEY }}"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -134,22 +142,18 @@ jobs:
           ARM_USE_OIDC: true
         run: terraform apply -input=false -auto-approve tfplan
 
-      - name: Extract Private Key
+      - name: Create SSH Key File for Bootstrap
         working-directory: ${{ env.TF_WORKING_DIR }}
-        env:
-          ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-          ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-          ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-          ARM_USE_OIDC: true
         run: |
-          terraform output -raw private_key > private_key.pem
-          chmod 600 private_key.pem
+          mkdir -p ssh
+          echo -e "${{ secrets.AZURE_SSH_PRIVATE_KEY }}" > ssh/id_rsa
+          chmod 600 ssh/id_rsa
 
-      - name: Upload Private Key Artifact
+      - name: Upload SSH Private Key Artifact
         uses: actions/upload-artifact@v4
         with:
           name: ssh-private-key
-          path: ${{ env.TF_WORKING_DIR }}/private_key.pem
+          path: ${{ env.TF_WORKING_DIR }}/ssh/id_rsa
           retention-days: 1
 
   terraform_destroy:

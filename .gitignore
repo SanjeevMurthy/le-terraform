@@ -27,3 +27,4 @@ override.tf.json
 *.history
 
 # SSH keys (if any are generated locally)
+*k8s_cluster_keys/*
