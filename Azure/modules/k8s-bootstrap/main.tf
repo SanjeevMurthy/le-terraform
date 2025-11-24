@@ -87,7 +87,7 @@ sudo swapoff -a || true
 sudo sed -i '/ swap / s/^/#/' /etc/fstab || true
 
 # initialize control plane
-sudo kubeadm init --pod-network-cidr=${pod_cidr} --kubernetes-version=${k8s_ver}
+sudo kubeadm init --pod-network-cidr=${var.pod_network_cidr} --kubernetes-version=${var.kubernetes_version}
 # (the variables above are replaced by the wrapper below)
 SSH_EOF
 
