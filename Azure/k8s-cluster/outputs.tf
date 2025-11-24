@@ -7,8 +7,3 @@ output "worker_private_ips" {
     for nic in module.worker_nics : nic.private_ip
   ]
 }
-
-output "private_key" {
-  value     = module.ssh_key.private_key
-  sensitive = true
-}
