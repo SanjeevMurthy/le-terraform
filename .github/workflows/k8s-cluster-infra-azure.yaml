@@ -78,7 +78,8 @@ jobs:
           ARM_USE_OIDC: true
         run: |
           terraform plan -out=tfplan -input=false \
-            -var="ssh_public_key=${{ secrets.AZURE_SSH_PUBLIC_KEY }}"
+            -var="ssh_public_key=${{ secrets.AZURE_SSH_PUBLIC_KEY }}" \
+            -var="ssh_private_key_path=ssh/id_rsa"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -198,6 +199,13 @@ jobs:
             -backend-config="key=${{ secrets.AZURE_TF_STATE_STORAGE_KEY }}" \
             -input=false
 
+      - name: Create SSH Key File
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: |
+          mkdir -p ssh
+          echo -e "${{ secrets.AZURE_SSH_PRIVATE_KEY }}" > ssh/id_rsa
+          chmod 600 ssh/id_rsa
+
       - name: Terraform Destroy
         working-directory: ${{ env.TF_WORKING_DIR }}
         env:
@@ -207,7 +215,8 @@ jobs:
           ARM_USE_OIDC: true
         run: |
           terraform destroy -auto-approve \
-            -var="ssh_public_key=${{ secrets.AZURE_SSH_PUBLIC_KEY }}"
+            -var="ssh_public_key=${{ secrets.AZURE_SSH_PUBLIC_KEY }}" \
+            -var="ssh_private_key_path=ssh/id_rsa"
 
   terraform_list:
     name: Terraform list resources
