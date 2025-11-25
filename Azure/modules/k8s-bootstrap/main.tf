@@ -86,30 +86,30 @@ OUTFILE="${path.module}/join_command.txt"
 # wait for SSH to be ready (simple loop)
 echo "Waiting for SSH on $${HOST}..."
 for i in $(seq 1 60); do
-  ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i "$${KEY}" "$${USER}@$${HOST}" 'echo ok' >/dev/null 2>&1 && break
+  ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ServerAliveInterval=60 -o ServerAliveCountMax=5 -i "$${KEY}" "$${USER}@$${HOST}" 'echo ok' >/dev/null 2>&1 && break
   echo "SSH not ready yet... sleeping 5s"
   sleep 5
 done
 
 # Detect if master is already initialized (check /etc/kubernetes/admin.conf)
-ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i "$${KEY}" "$${USER}@$${HOST}" 'sudo test -f /etc/kubernetes/admin.conf' && {
+ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ServerAliveInterval=60 -o ServerAliveCountMax=5 -i "$${KEY}" "$${USER}@$${HOST}" 'sudo test -f /etc/kubernetes/admin.conf' && {
   echo "Master already initialized — generating join command only"
-  ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i "$${KEY}" "$${USER}@$${HOST}" "sudo kubeadm token create --print-join-command" > "$${OUTFILE}"
+  ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ServerAliveInterval=60 -o ServerAliveCountMax=5 -i "$${KEY}" "$${USER}@$${HOST}" "sudo kubeadm token create --print-join-command" > "$${OUTFILE}"
   exit 0
 }
 
 # Run kubeadm init (only if not already initialized)
 echo "Running kubeadm init on master $${HOST}..."
-ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i "$${KEY}" "$${USER}@$${HOST}" "sudo kubeadm init --pod-network-cidr=${var.pod_network_cidr} --kubernetes-version=${var.kubernetes_version}"
+ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ServerAliveInterval=60 -o ServerAliveCountMax=5 -i "$${KEY}" "$${USER}@$${HOST}" "sudo kubeadm init --pod-network-cidr=${var.pod_network_cidr} --kubernetes-version=${var.kubernetes_version}"
 
 # Copy admin.conf to root so kubectl works
-ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i "$${KEY}" "$${USER}@$${HOST}" "sudo mkdir -p /root/.kube && sudo cp -i /etc/kubernetes/admin.conf /root/.kube/config && sudo chown root:root /root/.kube/config"
+ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ServerAliveInterval=60 -o ServerAliveCountMax=5 -i "$${KEY}" "$${USER}@$${HOST}" "sudo mkdir -p /root/.kube && sudo cp -i /etc/kubernetes/admin.conf /root/.kube/config && sudo chown root:root /root/.kube/config"
 
 # Install a pod network (flannel) — optionally adapt to your preferred CNI
-ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i "$${KEY}" "$${USER}@$${HOST}" "sudo /bin/bash -lc 'kubectl apply -f https://raw.githubusercontent.com/coreos/flannel/master/Documentation/kube-flannel.yml'"
+ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ServerAliveInterval=60 -o ServerAliveCountMax=5 -i "$${KEY}" "$${USER}@$${HOST}" "sudo /bin/bash -lc 'kubectl apply -f https://raw.githubusercontent.com/coreos/flannel/master/Documentation/kube-flannel.yml'"
 
 # Generate and capture the join command
-ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i "$${KEY}" "$${USER}@$${HOST}" "sudo kubeadm token create --print-join-command" > "$${OUTFILE}"
+ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ServerAliveInterval=60 -o ServerAliveCountMax=5 -i "$${KEY}" "$${USER}@$${HOST}" "sudo kubeadm token create --print-join-command" > "$${OUTFILE}"
 
 echo "Join command captured in $${OUTFILE}"
 EOT
