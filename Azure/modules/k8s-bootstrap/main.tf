@@ -15,6 +15,8 @@ locals {
     apt-get install -y containerd
     mkdir -p /etc/containerd
     containerd config default > /etc/containerd/config.toml || true
+    # Set SystemdCgroup = true (critical for k8s)
+    sed -i 's/SystemdCgroup = false/SystemdCgroup = true/g' /etc/containerd/config.toml
     systemctl restart containerd || true
     systemctl enable containerd || true
     
