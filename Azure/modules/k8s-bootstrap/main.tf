@@ -56,6 +56,13 @@ locals {
     # We need to detect if already initialized to be safe on re-runs
     if [ ! -f /etc/kubernetes/admin.conf ]; then
       kubeadm init --pod-network-cidr=${var.pod_network_cidr} --kubernetes-version=${var.kubernetes_version} --ignore-preflight-errors=NumCPU
+      
+      # Patch manifests to increase liveness probe timeouts (fix for slow VMs)
+      sed -i 's/initialDelaySeconds: 10/initialDelaySeconds: 60/g' /etc/kubernetes/manifests/etcd.yaml
+      sed -i 's/timeoutSeconds: 15/timeoutSeconds: 30/g' /etc/kubernetes/manifests/etcd.yaml
+      sed -i 's/initialDelaySeconds: 10/initialDelaySeconds: 60/g' /etc/kubernetes/manifests/kube-apiserver.yaml
+      # Restart kubelet to apply changes immediately
+      systemctl restart kubelet
     fi
 
     # Setup kubeconfig for root
