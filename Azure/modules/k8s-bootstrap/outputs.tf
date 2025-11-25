@@ -9,6 +9,10 @@ output "cloud_init_base_b64" {
   value = base64encode(local.common_setup_script)
 }
 
+output "cloud_init_master_b64" {
+  value = base64encode(local.master_setup_script)
+}
+
 output "common_setup_script" {
   value = local.common_setup_script
 }

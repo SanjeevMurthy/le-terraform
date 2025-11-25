@@ -103,7 +103,7 @@ module "master_vm" {
   ssh_public_key = var.ssh_public_key
 
   # Cloud-init: just the common setup
-  custom_data = module.k8s_bootstrap.cloud_init_base_b64
+  custom_data = module.k8s_bootstrap.cloud_init_master_b64
 }
 
 # -------------------------------

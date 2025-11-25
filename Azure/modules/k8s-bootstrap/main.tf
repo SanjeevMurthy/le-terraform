@@ -47,6 +47,33 @@ locals {
     apt-mark hold kubelet kubeadm kubectl
     systemctl enable kubelet || true
   SETUP
+
+  master_setup_script = <<-SETUP
+    ${local.common_setup_script}
+
+    # Initialize Master
+    echo "Running kubeadm init..."
+    # We need to detect if already initialized to be safe on re-runs
+    if [ ! -f /etc/kubernetes/admin.conf ]; then
+      kubeadm init --pod-network-cidr=${var.pod_network_cidr} --kubernetes-version=${var.kubernetes_version} --ignore-preflight-errors=NumCPU
+    fi
+
+    # Setup kubeconfig for root
+    mkdir -p /root/.kube
+    cp -i /etc/kubernetes/admin.conf /root/.kube/config
+    chown root:root /root/.kube/config
+
+    # Setup kubeconfig for admin user
+    mkdir -p /home/${var.admin_user}/.kube
+    cp -i /etc/kubernetes/admin.conf /home/${var.admin_user}/.kube/config
+    chown ${var.admin_user}:${var.admin_user} /home/${var.admin_user}/.kube/config
+
+    # Install Flannel
+    kubectl apply -f https://raw.githubusercontent.com/coreos/flannel/master/Documentation/kube-flannel.yml --kubeconfig /root/.kube/config
+
+    # Generate join command
+    kubeadm token create --print-join-command > /tmp/join_command.txt
+  SETUP
 }
 
 # cloud-init that will run on both master and worker to prepare the node (but NOT run kubeadm init/join here)
@@ -62,6 +89,11 @@ resource "local_file" "cloud_init_for_vm" {
   count    = 1
   content  = base64encode(local.common_setup_script)
   filename = "${path.module}/cloud_init_for_vm.txt"
+}
+
+resource "local_file" "cloud_init_master" {
+  content  = base64encode(local.master_setup_script)
+  filename = "${path.module}/cloud_init_master.b64"
 }
 
 # -------- MASTER post-provision step: run kubeadm init on master (only when is_master = true) --------
@@ -86,40 +118,17 @@ USER="${var.admin_user}"
 HOST="${var.master_public_ip}"
 OUTFILE="${path.module}/join_command.txt"
 
-# wait for SSH to be ready (simple loop)
-echo "Waiting for SSH on $${HOST}..."
+echo "Waiting for join command to be ready on $${HOST}..."
+# We wait up to 10 minutes (60 * 10s) for cloud-init to finish and generate the token
 for i in $(seq 1 60); do
-  ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ServerAliveInterval=60 -o ServerAliveCountMax=5 -i "$${KEY}" "$${USER}@$${HOST}" 'echo ok' >/dev/null 2>&1 && break
-  echo "SSH not ready yet... sleeping 5s"
-  sleep 5
+  # Check if file exists on remote
+  ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ServerAliveInterval=60 -o ServerAliveCountMax=5 -i "$${KEY}" "$${USER}@$${HOST}" 'test -f /tmp/join_command.txt' && break
+  echo "Join command not ready yet... sleeping 10s"
+  sleep 10
 done
 
-# Wait for cloud-init to finish (ensures kubeadm is installed)
-echo "Waiting for cloud-init to finish on $${HOST}..."
-ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ServerAliveInterval=60 -o ServerAliveCountMax=5 -i "$${KEY}" "$${USER}@$${HOST}" 'cloud-init status --wait'
-
-# Detect if master is already initialized (check /etc/kubernetes/admin.conf)
-ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ServerAliveInterval=60 -o ServerAliveCountMax=5 -i "$${KEY}" "$${USER}@$${HOST}" 'sudo test -f /etc/kubernetes/admin.conf' && {
-  echo "Master already initialized — generating join command only"
-  ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ServerAliveInterval=60 -o ServerAliveCountMax=5 -i "$${KEY}" "$${USER}@$${HOST}" "sudo kubeadm token create --print-join-command" > "$${OUTFILE}"
-  exit 0
-}
-
-# Run kubeadm init (only if not already initialized)
-echo "Running kubeadm init on master $${HOST}..."
-ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ServerAliveInterval=60 -o ServerAliveCountMax=5 -i "$${KEY}" "$${USER}@$${HOST}" "sudo kubeadm init --pod-network-cidr=${var.pod_network_cidr} --kubernetes-version=${var.kubernetes_version}"
-
-# Copy admin.conf to root so kubectl works
-ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ServerAliveInterval=60 -o ServerAliveCountMax=5 -i "$${KEY}" "$${USER}@$${HOST}" "sudo mkdir -p /root/.kube && sudo cp -i /etc/kubernetes/admin.conf /root/.kube/config && sudo chown root:root /root/.kube/config"
-
-# Copy admin.conf to admin user so kubectl works without sudo
-ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ServerAliveInterval=60 -o ServerAliveCountMax=5 -i "$${KEY}" "$${USER}@$${HOST}" "mkdir -p /home/$${USER}/.kube && sudo cp -i /etc/kubernetes/admin.conf /home/$${USER}/.kube/config && sudo chown $${USER}:$${USER} /home/$${USER}/.kube/config"
-
-# Install a pod network (flannel) — optionally adapt to your preferred CNI
-ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ServerAliveInterval=60 -o ServerAliveCountMax=5 -i "$${KEY}" "$${USER}@$${HOST}" "sudo /bin/bash -lc 'kubectl apply -f https://raw.githubusercontent.com/coreos/flannel/master/Documentation/kube-flannel.yml'"
-
-# Generate and capture the join command
-ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ServerAliveInterval=60 -o ServerAliveCountMax=5 -i "$${KEY}" "$${USER}@$${HOST}" "sudo kubeadm token create --print-join-command" > "$${OUTFILE}"
+# Download the join command
+ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ServerAliveInterval=60 -o ServerAliveCountMax=5 -i "$${KEY}" "$${USER}@$${HOST}" "cat /tmp/join_command.txt" > "$${OUTFILE}"
 
 echo "Join command captured in $${OUTFILE}"
 EOT
