@@ -1,4 +1,7 @@
 locals {
+  # Extract major.minor from the full version (e.g. 1.34.2 -> 1.34)
+  k8s_major_minor = join(".", slice(split(".", var.kubernetes_version), 0, 2))
+
   # common bootstrap steps (install containerd + kubeadm components)
   common_setup_script = <<-SETUP
     #!/bin/bash
@@ -36,8 +39,8 @@ locals {
 
     # Install Kubernetes apt repo and packages
     sudo mkdir -p /etc/apt/keyrings
-    curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.30/deb/Release.key | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
-    echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.30/deb/ /' | sudo tee /etc/apt/sources.list.d/kubernetes.list
+    curl -fsSL https://pkgs.k8s.io/core:/stable:/v${local.k8s_major_minor}/deb/Release.key | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+    echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v${local.k8s_major_minor}/deb/ /' | sudo tee /etc/apt/sources.list.d/kubernetes.list
 
     apt-get update -y
     apt-get install -y kubelet kubeadm kubectl
@@ -90,6 +93,10 @@ for i in $(seq 1 60); do
   echo "SSH not ready yet... sleeping 5s"
   sleep 5
 done
+
+# Wait for cloud-init to finish (ensures kubeadm is installed)
+echo "Waiting for cloud-init to finish on $${HOST}..."
+ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ServerAliveInterval=60 -o ServerAliveCountMax=5 -i "$${KEY}" "$${USER}@$${HOST}" 'cloud-init status --wait'
 
 # Detect if master is already initialized (check /etc/kubernetes/admin.conf)
 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ServerAliveInterval=60 -o ServerAliveCountMax=5 -i "$${KEY}" "$${USER}@$${HOST}" 'sudo test -f /etc/kubernetes/admin.conf' && {
