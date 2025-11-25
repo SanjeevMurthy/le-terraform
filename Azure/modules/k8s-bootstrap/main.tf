@@ -122,6 +122,7 @@ EOT
 
 # read join command file produced above (if exists)
 data "local_file" "join_command_file" {
+  count    = var.is_master ? 1 : 0
   filename = "${path.module}/join_command.txt"
   # this data source will only exist after null_resource writes the file. If it doesn't exist,
   # Terraform may error — but because null_resource is only created when is_master=true, and the
