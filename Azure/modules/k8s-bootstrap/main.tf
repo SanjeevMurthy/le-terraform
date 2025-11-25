@@ -105,6 +105,9 @@ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ServerAliveIn
 # Copy admin.conf to root so kubectl works
 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ServerAliveInterval=60 -o ServerAliveCountMax=5 -i "$${KEY}" "$${USER}@$${HOST}" "sudo mkdir -p /root/.kube && sudo cp -i /etc/kubernetes/admin.conf /root/.kube/config && sudo chown root:root /root/.kube/config"
 
+# Copy admin.conf to admin user so kubectl works without sudo
+ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ServerAliveInterval=60 -o ServerAliveCountMax=5 -i "$${KEY}" "$${USER}@$${HOST}" "mkdir -p /home/$${USER}/.kube && sudo cp -i /etc/kubernetes/admin.conf /home/$${USER}/.kube/config && sudo chown $${USER}:$${USER} /home/$${USER}/.kube/config"
+
 # Install a pod network (flannel) — optionally adapt to your preferred CNI
 ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ServerAliveInterval=60 -o ServerAliveCountMax=5 -i "$${KEY}" "$${USER}@$${HOST}" "sudo /bin/bash -lc 'kubectl apply -f https://raw.githubusercontent.com/coreos/flannel/master/Documentation/kube-flannel.yml'"
 
