@@ -1,5 +1,5 @@
 output "join_command" {
-  value       = try(chomp(data.local_file.join_command_file[0].content), "")
+  value       = try(data.external.join_command[0].result.command, "")
   description = "The kubeadm join command generated on the master (e.g. kubeadm join ...)"
   depends_on  = [null_resource.master_init_runner]
 }

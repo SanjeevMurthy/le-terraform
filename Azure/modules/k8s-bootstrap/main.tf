@@ -121,13 +121,24 @@ EOT
 }
 
 # read join command file produced above (if exists)
-data "local_file" "join_command_file" {
-  count    = var.is_master ? 1 : 0
-  filename = "${path.module}/join_command.txt"
-  # this data source will only exist after null_resource writes the file. If it doesn't exist,
-  # Terraform may error — but because null_resource is only created when is_master=true, and the
-  # worker modules depend on master output, order is enforced by the root module triggers
-  # (see explanation).
-  # If you need robustness, add wrapper logic in root to only pass join_command when file exists.
+# We use 'external' data source with a python script to avoid "file not found" errors during plan
+# when the file doesn't exist yet. data.local_file is too eager.
+data "external" "join_command" {
+  count = var.is_master ? 1 : 0
+
+  program = ["python3", "-c", <<EOT
+import json
+import os
+import sys
+filename = sys.argv[1]
+if os.path.exists(filename):
+    with open(filename, 'r') as f:
+        content = f.read().strip()
+    print(json.dumps({'command': content}))
+else:
+    print(json.dumps({'command': ''}))
+EOT
+  , "${path.module}/join_command.txt"]
+
   depends_on = [null_resource.master_init_runner]
 }
