@@ -1,6 +1,6 @@
 locals {
   # common bootstrap steps (install containerd + kubeadm components)
-  common_setup_script = <<-EOF
+  common_setup_script = <<-SETUP
     #!/bin/bash
     set -eux
 
@@ -14,6 +14,25 @@ locals {
     containerd config default > /etc/containerd/config.toml || true
     systemctl restart containerd || true
     systemctl enable containerd || true
+    
+    # Load kernel modules for k8s
+    cat <<EOF | sudo tee /etc/modules-load.d/k8s.conf
+    overlay
+    br_netfilter
+    EOF
+    
+    sudo modprobe overlay
+    sudo modprobe br_netfilter
+    
+    # Sysctl params required by setup, params persist across reboots
+    cat <<EOF | sudo tee /etc/sysctl.d/k8s.conf
+    net.bridge.bridge-nf-call-iptables  = 1
+    net.bridge.bridge-nf-call-ip6tables = 1
+    net.ipv4.ip_forward                 = 1
+    EOF
+    
+    # Apply sysctl params without reboot
+    sudo sysctl --system
 
     # Install Kubernetes apt repo and packages
     sudo mkdir -p /etc/apt/keyrings
@@ -24,7 +43,7 @@ locals {
     apt-get install -y kubelet kubeadm kubectl
     apt-mark hold kubelet kubeadm kubectl
     systemctl enable kubelet || true
-  EOF
+  SETUP
 }
 
 # cloud-init that will run on both master and worker to prepare the node (but NOT run kubeadm init/join here)
@@ -65,39 +84,32 @@ HOST="${var.master_public_ip}"
 OUTFILE="${path.module}/join_command.txt"
 
 # wait for SSH to be ready (simple loop)
-# wait for SSH to be ready (simple loop)
 echo "Waiting for SSH on $${HOST}..."
 for i in $(seq 1 60); do
-  ssh -o StrictHostKeyChecking=no -i "$${KEY}" "$${USER}@$${HOST}" 'echo ok' >/dev/null 2>&1 && break
+  ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i "$${KEY}" "$${USER}@$${HOST}" 'echo ok' >/dev/null 2>&1 && break
   echo "SSH not ready yet... sleeping 5s"
   sleep 5
 done
 
 # Detect if master is already initialized (check /etc/kubernetes/admin.conf)
-# Detect if master is already initialized (check /etc/kubernetes/admin.conf)
-ssh -o StrictHostKeyChecking=no -i "$${KEY}" "$${USER}@$${HOST}" 'sudo test -f /etc/kubernetes/admin.conf' && {
+ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i "$${KEY}" "$${USER}@$${HOST}" 'sudo test -f /etc/kubernetes/admin.conf' && {
   echo "Master already initialized — generating join command only"
-  ssh -o StrictHostKeyChecking=no -i "$${KEY}" "$${USER}@$${HOST}" "sudo kubeadm token create --print-join-command" > "$${OUTFILE}"
+  ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i "$${KEY}" "$${USER}@$${HOST}" "sudo kubeadm token create --print-join-command" > "$${OUTFILE}"
   exit 0
 }
 
 # Run kubeadm init (only if not already initialized)
-# Run kubeadm init (only if not already initialized)
-# Run kubeadm init (only if not already initialized)
 echo "Running kubeadm init on master $${HOST}..."
-ssh -o StrictHostKeyChecking=no -i "$${KEY}" "$${USER}@$${HOST}" "sudo kubeadm init --pod-network-cidr=${var.pod_network_cidr} --kubernetes-version=${var.kubernetes_version}"
+ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i "$${KEY}" "$${USER}@$${HOST}" "sudo kubeadm init --pod-network-cidr=${var.pod_network_cidr} --kubernetes-version=${var.kubernetes_version}"
 
 # Copy admin.conf to root so kubectl works
-# Copy admin.conf to root so kubectl works
-ssh -o StrictHostKeyChecking=no -i "$${KEY}" "$${USER}@$${HOST}" "sudo mkdir -p /root/.kube && sudo cp -i /etc/kubernetes/admin.conf /root/.kube/config && sudo chown root:root /root/.kube/config"
+ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i "$${KEY}" "$${USER}@$${HOST}" "sudo mkdir -p /root/.kube && sudo cp -i /etc/kubernetes/admin.conf /root/.kube/config && sudo chown root:root /root/.kube/config"
 
 # Install a pod network (flannel) — optionally adapt to your preferred CNI
-# Install a pod network (flannel) — optionally adapt to your preferred CNI
-ssh -o StrictHostKeyChecking=no -i "$${KEY}" "$${USER}@$${HOST}" "sudo /bin/bash -lc 'kubectl apply -f https://raw.githubusercontent.com/coreos/flannel/master/Documentation/kube-flannel.yml'"
+ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i "$${KEY}" "$${USER}@$${HOST}" "sudo /bin/bash -lc 'kubectl apply -f https://raw.githubusercontent.com/coreos/flannel/master/Documentation/kube-flannel.yml'"
 
 # Generate and capture the join command
-# Generate and capture the join command
-ssh -o StrictHostKeyChecking=no -i "$${KEY}" "$${USER}@$${HOST}" "sudo kubeadm token create --print-join-command" > "$${OUTFILE}"
+ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i "$${KEY}" "$${USER}@$${HOST}" "sudo kubeadm token create --print-join-command" > "$${OUTFILE}"
 
 echo "Join command captured in $${OUTFILE}"
 EOT
@@ -115,5 +127,3 @@ data "local_file" "join_command_file" {
   # If you need robustness, add wrapper logic in root to only pass join_command when file exists.
   depends_on = [null_resource.master_init_runner]
 }
-
-
