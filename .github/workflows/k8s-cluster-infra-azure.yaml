@@ -134,6 +134,13 @@ jobs:
           name: tfplan
           path: ${{ env.TF_WORKING_DIR }}
 
+      - name: Create SSH Key File for Bootstrap
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: |
+          mkdir -p ssh
+          echo -e "${{ secrets.AZURE_SSH_PRIVATE_KEY }}" > ssh/id_rsa
+          chmod 600 ssh/id_rsa
+
       - name: Terraform Apply
         working-directory: ${{ env.TF_WORKING_DIR }}
         env:
@@ -142,13 +149,6 @@ jobs:
           ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
           ARM_USE_OIDC: true
         run: terraform apply -input=false -auto-approve tfplan
-
-      - name: Create SSH Key File for Bootstrap
-        working-directory: ${{ env.TF_WORKING_DIR }}
-        run: |
-          mkdir -p ssh
-          echo -e "${{ secrets.AZURE_SSH_PRIVATE_KEY }}" > ssh/id_rsa
-          chmod 600 ssh/id_rsa
 
       - name: Upload SSH Private Key Artifact
         uses: actions/upload-artifact@v4
