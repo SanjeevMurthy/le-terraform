@@ -100,9 +100,67 @@ env:
   TF_VAR_github_repo: ${{ github.event.repository.name }}
 
 jobs:
+  # -------------------------------------------------------------------------
+  # 1. Validate. Needs NO cloud credentials, so it runs for everyone from the
+  #    very first commit -- including before you have finished Chapter 08 and
+  #    set the GCP repository variables.
+  # -------------------------------------------------------------------------
+  validate:
+    name: Validate (no credentials needed)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: Terraform fmt check
+        run: terraform fmt -check -recursive GCP/
+
+      # -backend=false downloads the providers and initialises the modules
+      # WITHOUT touching the state bucket, so no credentials are needed. That
+      # is what makes a real schema check possible on an unconfigured repo.
+      - name: Terraform init (no backend)
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform init -backend=false -input=false
+
+      # Checks every resource type, attribute and reference against the real
+      # provider schema. Catches typos that fmt cannot see.
+      - name: Terraform validate
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform validate
+
+      - name: Report whether the cloud job will run
+        env:
+          WIF: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          BUCKET: ${{ vars.TF_STATE_BUCKET }}
+        run: |
+          if [ -n "$WIF" ] && [ -n "$BUCKET" ]; then
+            echo "### Configuration found -- the plan/apply job will run." >> "$GITHUB_STEP_SUMMARY"
+          else
+            {
+              echo "### Cloud steps skipped"
+              echo
+              echo "\`GCP_WORKLOAD_IDENTITY_PROVIDER\` and/or \`TF_STATE_BUCKET\` are not set"
+              echo "as repository variables, so there is nothing to authenticate to yet."
+              echo
+              echo "This is expected until you finish **Chapter 08**. The formatting and"
+              echo "schema validation above still ran, and still gate this pull request."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  # -------------------------------------------------------------------------
+  # 2. Talk to Google Cloud. Skipped entirely until the repository variables
+  #    from Chapter 08 exist -- a skipped job is a far better signal than an
+  #    authentication error nobody can act on yet.
+  # -------------------------------------------------------------------------
   terraform:
     name: terraform ${{ github.event.inputs.action || 'plan' }}
     runs-on: ubuntu-latest
+    needs: validate
+    if: vars.GCP_WORKLOAD_IDENTITY_PROVIDER != '' && vars.TF_STATE_BUCKET != ''
 
     steps:
       - name: Guard the destroy action
@@ -138,14 +196,6 @@ jobs:
           terraform init -input=false \
             -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" \
             -backend-config="prefix=linkforge"
-
-      - name: Terraform fmt check
-        working-directory: ${{ env.TF_WORKING_DIR }}
-        run: terraform fmt -check -recursive ..
-
-      - name: Terraform validate
-        working-directory: ${{ env.TF_WORKING_DIR }}
-        run: terraform validate
 
       # ---------------------------------------------------------------------
       # plan (default for pull requests)
@@ -225,29 +275,51 @@ jobs:
         run: terraform state list
 ````
 
-**Five things in there worth understanding.**
+**Six things in there worth understanding.**
 
-**1. `permissions: id-token: write`.** Without this, `actions/checkout` runs
+**1. Two jobs, split by whether they need credentials.** The `validate` job
+runs `terraform fmt -check`, `terraform init -backend=false` and `terraform
+validate` — none of which touch Google Cloud. It therefore runs on *any* clone
+of this repository, from the very first commit, before you have set a single
+variable.
+
+That matters twice over. Practically: if you open a pull request touching
+`GCP/**` before finishing Chapter 08, you get a useful check instead of an
+authentication error you cannot act on yet. Technically: `terraform validate`
+after `init -backend=false` checks every resource type, attribute and reference
+against the **real provider schema**, catching typos that `fmt` cannot see. It
+is the single most valuable check in either pipeline and it costs nothing.
+
+The `terraform` job below is gated on the variables actually existing:
+
+```yaml
+if: vars.GCP_WORKLOAD_IDENTITY_PROVIDER != '' && vars.TF_STATE_BUCKET != ''
+```
+
+Until Chapter 08 it simply shows as *skipped*, which is a far clearer signal
+than a red cross.
+
+**2. `permissions: id-token: write`.** Without this, `actions/checkout` runs
 fine and then `google-github-actions/auth` fails with a message about a missing
 OIDC token. It is the most common first-run failure, and it is one line.
 
-**2. `TF_VAR_*` environment variables.** Terraform reads any variable named
+**3. `TF_VAR_*` environment variables.** Terraform reads any variable named
 `TF_VAR_project_id` into `var.project_id` automatically. Cleaner than a wall of
 `-var` flags, and — more importantly — it guarantees `plan` and `apply` see
 identical inputs, since both inherit the same job-level `env`.
 
-**3. `github_owner` and `github_repo` come from the `github` context**, not
+**4. `github_owner` and `github_repo` come from the `github` context**, not
 from variables you set. `${{ github.repository_owner }}` is always correct,
 including in a fork, which removes a whole class of "I copied the wrong repo
 name" failures.
 
-**4. Apply uses the *saved plan file*.** `terraform plan -out=tfplan` then
+**5. Apply uses the *saved plan file*.** `terraform plan -out=tfplan` then
 `terraform apply tfplan`, in the same job. This guarantees that what runs is
 exactly what the plan printed — no window in which the world changes between
 the two. Your Azure workflow achieves the same thing by passing an artifact
 between two jobs; doing it in one job is simpler and gives the same guarantee.
 
-**5. The destroy guard.** `terraform destroy` is behind a text box you must
+**6. The destroy guard.** `terraform destroy` is behind a text box you must
 type `DESTROY` into. A dropdown where "destroy" sits one line below "apply" is
 an accident waiting to happen, and this is a two-line fix.
 
@@ -321,13 +393,32 @@ jobs:
         working-directory: app/api
         run: pytest -q
 
+      - name: Report whether the deploy job will run
+        env:
+          WIF: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+        run: |
+          if [ -n "$WIF" ]; then
+            echo "### Configuration found -- the deploy job will run." >> "$GITHUB_STEP_SUMMARY"
+          else
+            {
+              echo "### Deploy skipped"
+              echo
+              echo "\`GCP_WORKLOAD_IDENTITY_PROVIDER\` is not set as a repository variable,"
+              echo "so there is no cluster to deploy to yet. Expected until **Chapter 08**."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
   # -------------------------------------------------------------------------
   # 2. Build, push and deploy. Only on main, and only if the tests passed.
   # -------------------------------------------------------------------------
   deploy:
     name: Build and deploy
     needs: test
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    # Skipped until the Chapter 08 repository variables exist. A skipped job
+    # is a much clearer signal to a half-configured repo than an auth error.
+    if: >-
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+      && vars.GCP_WORKLOAD_IDENTITY_PROVIDER != ''
     runs-on: ubuntu-latest
 
     env:
@@ -422,7 +513,7 @@ jobs:
           fi
 ```
 
-**Four things worth understanding.**
+**Five things worth understanding.**
 
 **1. The `test` job needs no cloud credentials.** It runs on every pull
 request, in about 20 seconds, and it gates the deploy job via `needs: test`.
@@ -437,7 +528,12 @@ reimplementation of it. When CI and local development share a script, "works on
 my machine" and "works in CI" stop being different states — and you can debug
 CI failures locally.
 
-**4. The rollback step is safe because of `maxUnavailable: 0`.**
+**4. The `deploy` job carries the same gate as the Terraform pipeline** —
+`vars.GCP_WORKLOAD_IDENTITY_PROVIDER != ''`. Push application changes before
+Chapter 08 and the tests still run and still tell you something useful; only
+the deploy is skipped, with a line in the run summary saying why.
+
+**5. The rollback step is safe because of `maxUnavailable: 0`.**
 `deploy.sh` ends with `kubectl rollout status`, which fails the step if the new
 Pods never become Ready. At that moment the **old Pods are still serving**,
 because the rollout strategy never removes an old Pod before a new one is
@@ -475,6 +571,7 @@ or open the **Actions** tab in your repository.
 | Job | Step | ~Time |
 |---|---|---|
 | `test` | Install dependencies, `pytest -q` → `12 passed` | 30s |
+| | (In the Terraform pipeline, `validate` runs `fmt`/`init`/`validate` in parallel) | 40s |
 | `deploy` | Authenticate to Google Cloud | 5s |
 | | Configure Docker for Artifact Registry | 3s |
 | | Build images | 90s |

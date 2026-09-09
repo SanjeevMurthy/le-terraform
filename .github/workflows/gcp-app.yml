@@ -55,13 +55,32 @@ jobs:
         working-directory: app/api
         run: pytest -q
 
+      - name: Report whether the deploy job will run
+        env:
+          WIF: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+        run: |
+          if [ -n "$WIF" ]; then
+            echo "### Configuration found -- the deploy job will run." >> "$GITHUB_STEP_SUMMARY"
+          else
+            {
+              echo "### Deploy skipped"
+              echo
+              echo "\`GCP_WORKLOAD_IDENTITY_PROVIDER\` is not set as a repository variable,"
+              echo "so there is no cluster to deploy to yet. Expected until **Chapter 08**."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
   # -------------------------------------------------------------------------
   # 2. Build, push and deploy. Only on main, and only if the tests passed.
   # -------------------------------------------------------------------------
   deploy:
     name: Build and deploy
     needs: test
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    # Skipped until the Chapter 08 repository variables exist. A skipped job
+    # is a much clearer signal to a half-configured repo than an auth error.
+    if: >-
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+      && vars.GCP_WORKLOAD_IDENTITY_PROVIDER != ''
     runs-on: ubuntu-latest
 
     env:
