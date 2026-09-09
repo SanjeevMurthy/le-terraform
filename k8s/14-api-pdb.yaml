@@ -1,0 +1,14 @@
+# A PodDisruptionBudget tells Kubernetes "never voluntarily take me below one
+# available replica". It is what makes `kubectl drain` wait for a replacement
+# Pod instead of yanking both at once during a node upgrade.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: api
+  namespace: linkforge
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: linkforge
+      tier: api

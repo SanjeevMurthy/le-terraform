@@ -1,0 +1,53 @@
+# ---------------------------------------------------------------------------
+# Local development stack -- no GCP account needed, no cost, works offline
+# ---------------------------------------------------------------------------
+#   docker compose -f app/docker-compose.yml up --build
+#   open http://localhost:8080
+#
+# Three containers that mirror the three tiers:
+#   firestore : the official Firestore EMULATOR, so no real database is touched
+#   api       : the same image that runs in GKE
+#   web       : the same image that runs in GKE, plus a proxy config that
+#               stands in for the Ingress
+services:
+  firestore:
+    image: google/cloud-sdk:emulators
+    command: >
+      gcloud emulators firestore start
+      --host-port=0.0.0.0:8200
+      --project=linkforge-local
+    ports:
+      - "8200:8200"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8200/ || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build:
+      context: ./api
+    environment:
+      # The google-cloud-firestore client checks for this variable and, when
+      # it is set, talks to the emulator and skips authentication entirely.
+      FIRESTORE_EMULATOR_HOST: firestore:8200
+      GOOGLE_CLOUD_PROJECT: linkforge-local
+      APP_VERSION: local-dev
+      POD_NAME: local-api
+    ports:
+      - "8000:8080"
+    depends_on:
+      firestore:
+        condition: service_healthy
+
+  web:
+    build:
+      context: ./web
+    volumes:
+      # Swap in the config that proxies /api and /r to the api container,
+      # standing in for what the GKE Ingress does in the cluster.
+      - ./web/nginx.local.conf:/etc/nginx/conf.d/default.conf:ro
+    ports:
+      - "8080:8080"
+    depends_on:
+      - api

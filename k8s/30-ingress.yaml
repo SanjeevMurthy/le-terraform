@@ -1,0 +1,55 @@
+# ---------------------------------------------------------------------------
+# The front door. THIS IS THE FILE THAT COSTS MONEY.
+# ---------------------------------------------------------------------------
+# Applying it creates a Google Cloud external HTTP load balancer: roughly
+# $0.025/hour, about $18/month. Delete the Ingress when you are done for the
+# day and the charge stops:
+#
+#     kubectl delete ingress linkforge -n linkforge
+#
+# Everything else in this lab is on a free tier or a few dollars a month.
+#
+# The routing here is what makes this a real 3-tier application rather than
+# two unrelated services: ONE hostname, ONE public IP, and the load balancer
+# decides which tier answers based on the path. Because the browser talks to
+# one origin, the frontend JavaScript can call "/api/links" as a relative
+# path -- no CORS, no API hostname compiled into the image.
+#
+# Longest matching prefix wins, so /api and /r reach the API and everything
+# else falls through to the web tier.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: linkforge
+  namespace: linkforge
+  annotations:
+    # HTTP only, to keep the lab free. For HTTPS you would add a
+    # ManagedCertificate plus a domain you control -- see Chapter 11.
+    kubernetes.io/ingress.allow-http: "true"
+spec:
+  # "gce" selects the Google Cloud Load Balancer controller built into GKE.
+  ingressClassName: gce
+  rules:
+    - http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: api
+                port:
+                  number: 80
+          - path: /r
+            pathType: Prefix
+            backend:
+              service:
+                name: api
+                port:
+                  number: 80
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: web
+                port:
+                  number: 80

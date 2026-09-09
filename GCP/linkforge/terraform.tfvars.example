@@ -1,0 +1,24 @@
+# Copy to terraform.tfvars and fill in. terraform.tfvars is gitignored.
+#
+#   cp terraform.tfvars.example terraform.tfvars
+
+project_id = "REPLACE-ME-linkforge-lab-1234"
+region     = "us-central1"
+zone       = "us-central1-a"
+
+github_owner = "REPLACE-ME"
+github_repo  = "le-terraform"
+
+# --- cost knobs -----------------------------------------------------------
+node_count     = 2
+machine_type   = "e2-small"
+use_spot_nodes = true
+
+# Costs ~$32/month. Only turn on if your Pods must reach the public internet.
+enable_cloud_nat = false
+
+# Lock the control plane to your own IP once CI is not using kubectl.
+# Find your IP with: curl -s ifconfig.me
+# master_authorized_cidrs = [
+#   { cidr = "203.0.113.7/32", name = "home" },
+# ]

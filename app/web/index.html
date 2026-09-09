@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>LinkForge</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <main class="shell">
+    <header class="head">
+      <h1>LinkForge</h1>
+      <p class="sub">A very small URL shortener, running on GKE and Firestore.</p>
+    </header>
+
+    <section class="card">
+      <form id="create-form" autocomplete="off">
+        <label for="target">Long URL</label>
+        <div class="row">
+          <input id="target" name="target" type="url" required
+                 placeholder="https://cloud.google.com/kubernetes-engine/docs" />
+          <button type="submit" id="submit-btn">Shorten</button>
+        </div>
+        <p class="error" id="error" hidden></p>
+      </form>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <h2>Recent links</h2>
+        <button class="ghost" id="refresh-btn" type="button">Refresh</button>
+      </div>
+      <div id="links-wrap">
+        <p class="muted" id="empty">Loading&hellip;</p>
+        <table id="links" hidden>
+          <thead>
+            <tr>
+              <th>Short link</th>
+              <th>Target</th>
+              <th class="num">Clicks</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="links-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- This footer is the payoff of the CI/CD chapter: it shows which build
+         is serving you, and which Pod answered. Refresh to watch the Pod name
+         change as the load balancer spreads requests across replicas. -->
+    <footer class="foot">
+      <span>api version <code id="version">?</code></span>
+      <span>served by pod <code id="pod">?</code></span>
+    </footer>
+  </main>
+
+  <script src="/app.js"></script>
+</body>
+</html>

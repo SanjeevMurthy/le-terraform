@@ -1,0 +1,226 @@
+# ===========================================================================
+# Terraform pipeline for the GCP LinkForge lab
+# ===========================================================================
+# Authenticates with Workload Identity Federation -- there is no service
+# account JSON key stored in this repository. Compare with the Azure workflow
+# in this repo: same idea, different cloud.
+#
+# Everything it needs lives in repository VARIABLES, not secrets, because none
+# of it is secret. That is the entire point of federation.
+#   Settings > Secrets and variables > Actions > Variables
+name: GCP Infra (Terraform)
+
+on:
+  # Reviewing infrastructure changes before they land is the whole job.
+  pull_request:
+    paths:
+      - "GCP/**"
+      - ".github/workflows/gcp-infra.yml"
+
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "What to run"
+        required: true
+        default: "plan"
+        type: choice
+        options:
+          - plan
+          - apply
+          - destroy
+          - list
+      confirm_destroy:
+        description: "Type DESTROY to confirm (only read for the destroy action)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+  id-token: write # REQUIRED: lets the job mint an OIDC token. Without it, auth fails.
+  pull-requests: write # so the plan can be posted as a PR comment
+
+env:
+  TF_WORKING_DIR: GCP/linkforge
+  TF_VERSION: "1.9.8"
+  # Terraform reads TF_VAR_* automatically, which is tidier than a wall of
+  # -var flags and keeps plan and apply guaranteed identical.
+  TF_VAR_project_id: ${{ vars.GCP_PROJECT_ID }}
+  TF_VAR_region: ${{ vars.GCP_REGION }}
+  TF_VAR_zone: ${{ vars.GCP_ZONE }}
+  TF_VAR_github_owner: ${{ github.repository_owner }}
+  TF_VAR_github_repo: ${{ github.event.repository.name }}
+
+jobs:
+  # -------------------------------------------------------------------------
+  # 1. Validate. Needs NO cloud credentials, so it runs for everyone from the
+  #    very first commit -- including before you have finished Chapter 08 and
+  #    set the GCP repository variables.
+  # -------------------------------------------------------------------------
+  validate:
+    name: Validate (no credentials needed)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: Terraform fmt check
+        run: terraform fmt -check -recursive GCP/
+
+      # -backend=false downloads the providers and initialises the modules
+      # WITHOUT touching the state bucket, so no credentials are needed. That
+      # is what makes a real schema check possible on an unconfigured repo.
+      - name: Terraform init (no backend)
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform init -backend=false -input=false
+
+      # Checks every resource type, attribute and reference against the real
+      # provider schema. Catches typos that fmt cannot see.
+      - name: Terraform validate
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform validate
+
+      - name: Report whether the cloud job will run
+        env:
+          WIF: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          BUCKET: ${{ vars.TF_STATE_BUCKET }}
+        run: |
+          if [ -n "$WIF" ] && [ -n "$BUCKET" ]; then
+            echo "### Configuration found -- the plan/apply job will run." >> "$GITHUB_STEP_SUMMARY"
+          else
+            {
+              echo "### Cloud steps skipped"
+              echo
+              echo "\`GCP_WORKLOAD_IDENTITY_PROVIDER\` and/or \`TF_STATE_BUCKET\` are not set"
+              echo "as repository variables, so there is nothing to authenticate to yet."
+              echo
+              echo "This is expected until you finish **Chapter 08**. The formatting and"
+              echo "schema validation above still ran, and still gate this pull request."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  # -------------------------------------------------------------------------
+  # 2. Talk to Google Cloud. Skipped entirely until the repository variables
+  #    from Chapter 08 exist -- a skipped job is a far better signal than an
+  #    authentication error nobody can act on yet.
+  # -------------------------------------------------------------------------
+  terraform:
+    name: terraform ${{ github.event.inputs.action || 'plan' }}
+    runs-on: ubuntu-latest
+    needs: validate
+    if: vars.GCP_WORKLOAD_IDENTITY_PROVIDER != '' && vars.TF_STATE_BUCKET != ''
+
+    steps:
+      - name: Guard the destroy action
+        if: github.event.inputs.action == 'destroy' && github.event.inputs.confirm_destroy != 'DESTROY'
+        run: |
+          echo "::error::Refusing to destroy. Re-run and type DESTROY in the confirmation box."
+          exit 1
+
+      - uses: actions/checkout@v4
+
+      # Exchanges the run's OIDC token for short-lived Google credentials and
+      # writes them where gcloud and the Terraform google provider find them
+      # automatically. No key file is ever created on disk.
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_INFRA_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      # The backend block in backend.tf is empty on purpose; the bucket is
+      # supplied here. "prefix" is the folder inside the bucket, so several
+      # stacks can share one bucket without colliding.
+      - name: Terraform init
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: |
+          terraform init -input=false \
+            -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" \
+            -backend-config="prefix=linkforge"
+
+      # ---------------------------------------------------------------------
+      # plan (default for pull requests)
+      # ---------------------------------------------------------------------
+      - name: Terraform plan
+        id: plan
+        if: github.event_name == 'pull_request' || github.event.inputs.action == 'plan' || github.event.inputs.action == 'apply'
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: |
+          terraform plan -input=false -no-color -out=tfplan | tee plan.txt
+          {
+            echo 'summary<<PLAN_EOF'
+            tail -c 60000 plan.txt
+            echo 'PLAN_EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      # The plan text is passed through an environment variable rather than
+      # interpolated into the script body. Plan output can contain backticks
+      # and ${...}, which would break -- or worse, execute inside -- a
+      # JavaScript template literal.
+      - name: Comment plan on the pull request
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        env:
+          PLAN_TEXT: ${{ steps.plan.outputs.summary }}
+        with:
+          script: |
+            const plan = process.env.PLAN_TEXT || '(no plan output)';
+            const body = [
+              '### Terraform plan',
+              '',
+              '<details><summary>Show plan</summary>',
+              '',
+              '```hcl',
+              plan,
+              '```',
+              '',
+              '</details>',
+            ].join('\n');
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body.slice(0, 65000),
+            });
+
+      # ---------------------------------------------------------------------
+      # apply
+      # ---------------------------------------------------------------------
+      # Applies the SAVED plan file, not a fresh one. That guarantees what
+      # runs is exactly what the plan step printed, with no window for the
+      # world to change in between.
+      - name: Terraform apply
+        if: github.event.inputs.action == 'apply'
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform apply -input=false -auto-approve tfplan
+
+      - name: Show outputs
+        if: github.event.inputs.action == 'apply'
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform output
+
+      # ---------------------------------------------------------------------
+      # destroy
+      # ---------------------------------------------------------------------
+      - name: Terraform destroy
+        if: github.event.inputs.action == 'destroy'
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform destroy -input=false -auto-approve
+
+      # ---------------------------------------------------------------------
+      # list -- a read-only "what do I actually own right now?"
+      # ---------------------------------------------------------------------
+      - name: Terraform state list
+        if: github.event.inputs.action == 'list'
+        working-directory: ${{ env.TF_WORKING_DIR }}
+        run: terraform state list

@@ -1,0 +1,175 @@
+# ===========================================================================
+# Application pipeline: test -> build -> push -> deploy
+# ===========================================================================
+# Separate from the Terraform pipeline on purpose. Application code changes
+# many times a day; infrastructure changes rarely and needs review. Splitting
+# them means a routine deploy cannot accidentally touch your VPC, and the
+# service account this workflow uses has no power to.
+name: GCP App (build & deploy)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "app/**"
+      - "k8s/**"
+      - "scripts/deploy.sh"
+      - ".github/workflows/gcp-app.yml"
+  pull_request:
+    paths:
+      - "app/**"
+      - "k8s/**"
+      - ".github/workflows/gcp-app.yml"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing image tag to deploy (leave blank to build the current commit)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  # -------------------------------------------------------------------------
+  # 1. Test. Runs on every pull request, needs no cloud credentials at all.
+  # -------------------------------------------------------------------------
+  test:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: app/api/requirements-dev.txt
+
+      - name: Install dependencies
+        working-directory: app/api
+        run: pip install -r requirements-dev.txt
+
+      - name: Run tests
+        working-directory: app/api
+        run: pytest -q
+
+      - name: Report whether the deploy job will run
+        env:
+          WIF: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+        run: |
+          if [ -n "$WIF" ]; then
+            echo "### Configuration found -- the deploy job will run." >> "$GITHUB_STEP_SUMMARY"
+          else
+            {
+              echo "### Deploy skipped"
+              echo
+              echo "\`GCP_WORKLOAD_IDENTITY_PROVIDER\` is not set as a repository variable,"
+              echo "so there is no cluster to deploy to yet. Expected until **Chapter 08**."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  # -------------------------------------------------------------------------
+  # 2. Build, push and deploy. Only on main, and only if the tests passed.
+  # -------------------------------------------------------------------------
+  deploy:
+    name: Build and deploy
+    needs: test
+    # Skipped until the Chapter 08 repository variables exist. A skipped job
+    # is a much clearer signal to a half-configured repo than an auth error.
+    if: >-
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+      && vars.GCP_WORKLOAD_IDENTITY_PROVIDER != ''
+    runs-on: ubuntu-latest
+
+    env:
+      PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+      REGION: ${{ vars.GCP_REGION }}
+      ZONE: ${{ vars.GCP_ZONE }}
+      CLUSTER_NAME: ${{ vars.GKE_CLUSTER }}
+      AR_REPO: ${{ vars.AR_REPOSITORY }}
+      NAMESPACE: linkforge
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # The image tag is the commit SHA. Immutable, traceable, and it makes
+      # "which commit is in production?" a question with an actual answer.
+      - name: Work out the image tag
+        id: vars
+        run: |
+          TAG="${{ github.event.inputs.tag }}"
+          if [ -z "$TAG" ]; then TAG="$(git rev-parse --short HEAD)"; fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Deploying tag: $TAG"
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          # Note this is the APP service account, not the infra one. It can
+          # push images and roll out Deployments, and nothing else.
+          service_account: ${{ vars.GCP_APP_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      # Teaches Docker to send the short-lived Google credentials from the
+      # step above when it talks to Artifact Registry.
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
+
+      - name: Build images
+        env:
+          TAG: ${{ steps.vars.outputs.tag }}
+        run: |
+          IMAGE_REPO="${REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}"
+          docker build -t "${IMAGE_REPO}/api:${TAG}" app/api
+          docker build -t "${IMAGE_REPO}/web:${TAG}" app/web
+
+      - name: Push images
+        env:
+          TAG: ${{ steps.vars.outputs.tag }}
+        run: |
+          IMAGE_REPO="${REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}"
+          docker push "${IMAGE_REPO}/api:${TAG}"
+          docker push "${IMAGE_REPO}/web:${TAG}"
+
+      # Writes a kubeconfig that authenticates with the same federated
+      # credentials. No cluster password, no downloaded certificate.
+      - name: Get GKE credentials
+        uses: google-github-actions/get-gke-credentials@v2
+        with:
+          cluster_name: ${{ vars.GKE_CLUSTER }}
+          location: ${{ vars.GCP_ZONE }}
+
+      - name: Deploy
+        env:
+          TAG: ${{ steps.vars.outputs.tag }}
+        run: |
+          export IMAGE_REPO="${REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}"
+          export API_GSA_EMAIL="linkforge-api@${PROJECT_ID}.iam.gserviceaccount.com"
+          ./scripts/deploy.sh "${TAG}"
+
+      # deploy.sh runs "kubectl rollout status", which fails the step if the
+      # new Pods never become Ready. Because maxUnavailable is 0, the old
+      # Pods are still serving at that point -- so this rollback returns the
+      # Deployment to a known-good state without any downtime having occurred.
+      - name: Roll back if the rollout failed
+        if: failure()
+        run: |
+          echo "::warning::Rollout failed, rolling back"
+          kubectl rollout undo deployment/api -n "${NAMESPACE}" || true
+          kubectl rollout undo deployment/web -n "${NAMESPACE}" || true
+          kubectl get pods -n "${NAMESPACE}"
+
+      - name: Show the public URL
+        if: success()
+        run: |
+          IP=$(kubectl get ingress linkforge -n "${NAMESPACE}" \
+                 -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
+          if [ -n "$IP" ]; then
+            echo "### LinkForge is live at http://${IP}" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "### Deployed. Ingress has no IP yet (it takes a few minutes on first creation)." >> "$GITHUB_STEP_SUMMARY"
+          fi

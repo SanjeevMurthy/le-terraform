@@ -1,0 +1,8 @@
+# A namespace is a blast-radius boundary. Everything LinkForge owns lives
+# here, so "what did I deploy?" and "delete all of it" are both one command.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: linkforge
+  labels:
+    app: linkforge
