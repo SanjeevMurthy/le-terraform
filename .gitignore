@@ -28,3 +28,18 @@ override.tf.json
 
 # SSH keys (if any are generated locally)
 k8s-cluster-keys/
+
+# --- GCP LinkForge lab -----------------------------------------------------
+# Your personal settings file (contains your project ID, not a secret, but
+# not something anyone else's copy of the repo should inherit).
+scripts/env.sh
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+venv/
+.venv/
+
+# Rendered Kubernetes manifests, if you ever redirect deploy.sh output
+k8s/rendered/

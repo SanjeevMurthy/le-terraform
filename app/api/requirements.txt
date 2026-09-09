@@ -1,0 +1,7 @@
+# Pinned exactly. Unpinned dependencies mean a rebuild six months from now
+# produces a different image from the same commit, which makes "it worked
+# yesterday" impossible to debug.
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+google-cloud-firestore==2.20.0
+pydantic==2.10.4

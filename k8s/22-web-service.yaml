@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: web
+  namespace: linkforge
+  annotations:
+    cloud.google.com/neg: '{"ingress": true}'
+    cloud.google.com/backend-config: '{"default": "web"}'
+spec:
+  type: ClusterIP
+  selector:
+    app: linkforge
+    tier: web
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+      protocol: TCP

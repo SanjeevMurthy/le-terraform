@@ -1,0 +1,115 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+  namespace: linkforge
+  labels:
+    app: linkforge
+    tier: api
+spec:
+  # NOTE: once you apply the HorizontalPodAutoscaler in Chapter 11, DELETE the
+  # "replicas" line below. Otherwise every kubectl apply resets the replica
+  # count and fights the autoscaler.
+  replicas: 2
+  selector:
+    matchLabels:
+      app: linkforge
+      tier: api
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      # maxUnavailable: 0 means a new Pod must be Ready before an old one is
+      # removed. This is what makes the deploy in Chapter 10 zero-downtime.
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: linkforge
+        tier: api
+    spec:
+      serviceAccountName: linkforge-api
+      # Give the load balancer time to stop sending new requests to this Pod
+      # before the process exits. Without it you get a handful of 502s on
+      # every single deploy, which people wrongly blame on the app.
+      terminationGracePeriodSeconds: 45
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      # Spread the replicas over different nodes when possible, so draining
+      # one node does not take the whole API down.
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: linkforge
+              tier: api
+      containers:
+        - name: api
+          image: __API_IMAGE__
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: GOOGLE_CLOUD_PROJECT
+              value: __GCP_PROJECT_ID__
+            - name: APP_VERSION
+              value: __APP_VERSION__
+            # The downward API: Kubernetes injects the Pod's own name. The web
+            # UI displays it, which makes load balancing visible.
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              # Memory limit: yes. Exceeding it is a bug and OOMKill is the
+              # correct, obvious signal.
+              memory: 256Mi
+              # CPU limit: deliberately absent. A CPU limit throttles the
+              # container even when the node is idle, which shows up as
+              # mysterious latency. The 50m request is what the scheduler
+              # uses; bursting above it when capacity exists is free.
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 20
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+          lifecycle:
+            preStop:
+              exec:
+                # Container-native load balancing takes a few seconds to stop
+                # sending traffic to a terminating Pod. Sleeping here absorbs
+                # that gap instead of dropping the requests in it.
+                command: ["/bin/sleep", "15"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        # readOnlyRootFilesystem is on, so anything that needs to write needs
+        # an explicit, non-executable scratch volume.
+        - name: tmp
+          emptyDir: {}

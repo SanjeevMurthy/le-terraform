@@ -1,0 +1,30 @@
+# BackendConfig is a GKE-specific CRD that configures the Google Cloud load
+# balancer backend sitting in front of this Service.
+#
+# Without it, the load balancer guesses a health check from your readiness
+# probe. That guess is right often enough that people skip this file -- and
+# then spend an afternoon staring at a backend stuck in UNHEALTHY. Being
+# explicit costs 12 lines.
+#
+# Note which endpoint it checks: /healthz, not /readyz. If Firestore goes
+# down, we want the load balancer to keep routing to the API so users get a
+# clear error page. Marking every backend UNHEALTHY would give them a bare
+# 502 from Google instead.
+apiVersion: cloud.google.com/v1
+kind: BackendConfig
+metadata:
+  name: api
+  namespace: linkforge
+spec:
+  healthCheck:
+    type: HTTP
+    requestPath: /healthz
+    port: 8080
+    checkIntervalSec: 15
+    timeoutSec: 5
+    healthyThreshold: 1
+    unhealthyThreshold: 3
+  timeoutSec: 30
+  # Give in-flight requests time to finish when a Pod is removed.
+  connectionDraining:
+    drainingTimeoutSec: 30

@@ -1,0 +1,32 @@
+# Applied by hand in Chapter 11, NOT part of the normal deploy.
+#
+# Before applying: delete the "replicas:" line from k8s/12-api-deployment.yaml.
+# If you leave it, every deploy resets the replica count and undoes whatever
+# the autoscaler just decided. This is the single most common HPA bug.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: api
+  namespace: linkforge
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: api
+  minReplicas: 2
+  maxReplicas: 6
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          # Percentage of the *request* (50m), not of a whole core. At 60%,
+          # sustained usage above 30m per Pod triggers a scale-up.
+          averageUtilization: 60
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 30
+    scaleDown:
+      # Scale down slowly. Reacting instantly to a dip causes flapping.
+      stabilizationWindowSeconds: 180
